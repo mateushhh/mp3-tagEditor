@@ -1,4 +1,5 @@
 #!/bin/bash
+
 # Author           : Mateusz Grzonka ( mateuszgrzonka2003@gmail.com )
 # Created On       : 14.05.2024
 # Last Modified By : Mateusz Grzonka ( mateuszgrzonka2003@gmail.com )
@@ -12,34 +13,37 @@
 
 # Display help information
 show_help() {
-    echo "Usage: $0 [OPTION]"
-    echo
-    echo "Options:"
-    echo "  -h          Display this help message."
-    echo "  -v          Display version and author information."
-    echo
-    echo "Interactive Options:"
-    echo "  1           Search for MP3 files based on tags."
-    echo "  2           Modify MP3 tags."
-    echo "  3           Create a playlist."
-    echo "  4           Exit."
+    echo -e "Usage: $0 [OPTION]\n\nOptions:\n  -h          Display this help message.\n  -v          Display version and author information.\n\nInteractive Options:\n  1           Search for MP3 files based on tags.\n  2           Modify MP3 tags.\n  3           Create a playlist."
 }
 
 # Display version and author information
 show_version() {
-    echo "MP3 Tag Tool"
-    echo "Version: 1.3"
-    echo "Author: Mateusz Grzonka (mateuszgrzonka2003@gmail.com)"
-    echo "Created On: 14.05.2024"
-    echo "Last Modified On: 20.05.2024"
+    echo -e "MP3 Tag Tool\nVersion: 1.3\nAuthor: Mateusz Grzonka (mateuszgrzonka2003@gmail.com)\nCreated On: 14.05.2024\nLast Modified On: 20.05.2024"
 }
 
 # Check if id3v2 is installed
-if ! command -v id3v2 &> /dev/null
-then
+if ! command -v id3v2 &> /dev/null; then
     echo "id3v2 could not be found. Please install id3v2 and try again."
     exit 1
 fi
+
+# Handle command-line options
+while getopts ":vh" opt; do
+    case $opt in
+        h)
+            show_help
+            exit 0
+            ;;
+        v)
+            show_version
+            exit 0
+            ;;
+        \?)
+            echo "Invalid option: -$OPTARG" >&2
+            exit 1
+            ;;
+    esac
+done
 
 # Function that searches for mp3 files based on tags and displays information about them
 search_mp3() {
@@ -47,10 +51,8 @@ search_mp3() {
     local year="$2"
     local artist="$3"
 
-    # Tablica przechowująca informacje o plikach
     declare -a files_info
 
-    # Przetwarzanie plików MP3 i zapisywanie informacji do tablicy
     while IFS= read -r file; do
         title_tag=$(id3v2 -l "$file" | grep -i "TIT2" | awk -F": " '{print $2}')
         genre_tag=$(id3v2 -l "$file" | grep -i "TCON" | awk -F": " '{print $2}')
@@ -59,29 +61,52 @@ search_mp3() {
         album_tag=$(id3v2 -l "$file" | grep -i "TALB" | awk -F": " '{print $2}')
         track_tag=$(id3v2 -l "$file" | grep -i "TRCK" | awk -F": " '{print $2}')
 
-        # Sprawdzanie czy plik pasuje do filtrów
         if [[ ( -z "$genre" || "$genre_tag" == *"$genre"* ) &&
-            ( -z "$artist" || "$artist_tag" == *"$artist"* ) && 
-            ( -z "$year" || "$year_tag" =~ ${year//\*/.*} ) ]]; then
-            files_info+=("ARTIST - TITLE: $artist_tag - $title_tag" 
-                        "Genre: $genre_tag" 
-                        "Year: $year_tag" 
-                        "Album: $album_tag" 
-                        "Track: $track_tag" 
-                        "File Path: $file"
-                        "-----------------------------")
+              ( -z "$artist" || "$artist_tag" == *"$artist"* ) && 
+              ( -z "$year" || "$year_tag" =~ ${year//\*/.*} ) ]]; then
+            files_info+=("Artist: $artist_tag\nTitle: $title_tag\nGenre: $genre_tag\nYear: $year_tag\nAlbum: $album_tag\nTrack: $track_tag\nFile Path: $file\n\n")
         fi
     done < <(find . -name "*.mp3")
 
-    # Wyświetlanie informacji o plikach z tablicy
-    echo ""
-    for info in "${files_info[@]}"; do
-        echo "$info"
-    done
+    # Join the files_info array into a single string
+    results="${files_info[*]}"
+
+    # Display the results in a scrollable text box
+    echo -e "$results" | zenity --text-info --title="Search Results" --width=600 --height=1000 --ok-label="Close"
 }
 
-# Function to modify mp3 tags
+# Funkcja do wyboru pliku MP3
+choose_mp3_file() {
+    zenity --file-selection --title="Select MP3 file"
+}
+
+# Funkcja do modyfikacji tagów
 modify_tags() {
+    local file
+    file=$(choose_mp3_file)
+
+    if [[ -z "$file" ]]; then
+        echo "No file selected."
+        return
+    fi
+
+    local title artist album year genre track cover
+
+    input=$(zenity --forms --title="Modify MP3 Tags" --text="Enter the details:" \
+        --add-entry="New title" \
+        --add-entry="New artist" \
+        --add-entry="New album" \
+        --add-entry="New year" \
+        --add-entry="New genre" \
+        --add-entry="New track number" \
+        --add-entry="Cover image path")
+
+    IFS="|" read -r title artist album year genre track cover <<< "$input"
+    modify_tags_for_file "$file" "$title" "$artist" "$album" "$year" "$genre" "$track" "$cover"
+}
+
+# Funkcja do rzeczywistej modyfikacji tagów dla wybranego pliku
+modify_tags_for_file() {
     local file="$1"
     local title="$2"
     local artist="$3"
@@ -105,25 +130,21 @@ modify_tags() {
     [[ -n "$cover" ]] && id3v2 --APIC "$cover" "$file"
 }
 
+
 # Function to create playlist
 create_playlist() {
     local playlist_name="$1"
-    shift
-    local files_str="$1"
+    local files
 
-    # Split the files_str by semicolon into an array
-    IFS=';' read -ra files <<< "$files_str"
+    files=$(zenity --file-selection --multiple --separator=$'\n' --file-filter='MP3 files (mp3) | *.mp3' --title="Select MP3 files")
 
-    # Check if any files are provided
-    if [ ${#files[@]} -eq 0 ]; then
-        echo "No files provided to create playlist."
+    if [ -z "$files" ]; then
+        echo "No files selected."
         return
     fi
 
-    # Create playlist file
     echo "#EXTM3U" > "$playlist_name.m3u"
 
-    # Add files to the playlist
     for file in "${files[@]}"; do
         echo "$file" >> "$playlist_name.m3u"
     done
@@ -131,65 +152,33 @@ create_playlist() {
     echo "Playlist '$playlist_name' created successfully."
 }
 
-# Command-line options
-while getopts ":hv" opt; do
-    case $opt in
-        h)
-            show_help
-            exit 0
-            ;;
-        v)
-            show_version
-            exit 0
-            ;;
-        \?)
-            echo "Invalid option: -$OPTARG" >&2
-            exit 1
-            ;;
-    esac
-done
-
 # Main program loop
 while true; do
-    echo
-    echo "Choose option:"
-    echo "1. Search for MP3 files"
-    echo "2. Modify MP3 tags"
-    echo "3. Create a playlist"
-    echo "4. Exit"
-    read -p "Option: " option
+    option=$(zenity --list --title="MP3 Tag Tool" --text="Choose option:" --radiolist --column="Select" --column="Option" TRUE "Search for MP3 files" FALSE "Modify MP3 tags" FALSE "Create a playlist" --cancel-label="Quit")
+
+    if [ "$?" -ne 0 ]; then
+        break
+    fi
 
     case $option in
-        1)
-            read -p "Enter genre (or leave empty): " genre
-            read -p "Enter year (or leave empty, use * for wildcard): " year
-            read -p "Enter artist (or leave empty): " artist
+        "Search for MP3 files")
+            input=$(zenity --forms --title="Search for MP3 files" --text="Enter search criteria:" \
+                --add-entry="Genre" \
+                --add-entry="Year (use * for wildcard)" \
+                --add-entry="Artist")
+
+            IFS="|" read -r genre year artist <<< "$input"
             search_mp3 "$genre" "$year" "$artist"
             ;;
-        2)
-            read -p "Enter the path to the MP3 file: " file
-            if [[ ! -f "$file" ]]; then
-                echo "The file '$file' does not exist or cannot be accessed."
-                continue
-            fi
+        "Modify MP3 tags")
+            modify_tags
+            ;;
+        "Create a playlist")
+            input=$(zenity --forms --title="Create Playlist" --text="Enter playlist details:" \
+                --add-entry="Playlist name")
 
-            read -p "Enter new title (or leave empty): " title
-            read -p "Enter new artist (or leave empty): " artist
-            read -p "Enter new album (or leave empty): " album
-            read -p "Enter new year (or leave empty): " year
-            read -p "Enter new genre (or leave empty): " genre
-            read -p "Enter new track number (or leave empty): " track
-            read -p "Enter the path to the new cover (or leave empty): " cover
-            modify_tags "$file" "$title" "$artist" "$album" "$year" "$genre" "$track" "$cover"
-            ;;
-        3)
-            read -p "Enter playlist name: " playlist_name
-            read -p "Enter file paths separated by semicolon (;) to add to the playlist: " files_str
-            create_playlist "$playlist_name" "$files_str"
-            ;;
-        4)
-            echo "Exiting..."
-            break
+            IFS="|" read -r playlist_name <<< "$input"
+            create_playlist "$playlist_name"
             ;;
         *)
             echo "Unknown option."
