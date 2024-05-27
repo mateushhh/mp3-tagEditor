@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# Author           : Mateusz Grzonka ( mateuszgrzonka2003@gmail.com )
+# Author           : Mateusz Grzonka ( s198023@student.pg.edu.pl )
 # Created On       : 14.05.2024
-# Last Modified By : Mateusz Grzonka ( mateuszgrzonka2003@gmail.com )
+# Last Modified By : Mateusz Grzonka ( s198023@student.pg.edu.pl )
 # Last Modified On : 20.05.2024 
 # Version          : 1.3
 #
